@@ -1,20 +1,23 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: sealed-secrets
+  name: kyverno
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/bitnami-labs/sealed-secrets
-    targetRevision: HEAD
-    path: helm/sealed-secrets
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: 3.3.7
     helm:
-      releaseName: sealed-secrets
+      releaseName: kyverno
   destination:
     server: https://kubernetes.default.svc
-    namespace: kube-system
+    namespace: kyverno
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
