@@ -1,0 +1,33 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: cis-5-2-1-disallow-privileged
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: CIS Kubernetes Benchmark 5.2
+    policies.kyverno.io/severity: high
+    compliance.meridian/cis-control: "5.2.1"
+    compliance.meridian/nist-800-53: "AC-6, CM-7"
+    compliance.meridian/pss-profile: "baseline"
+    policies.kyverno.io/description: >-
+      Privileged containers disable most container isolation and grant
+      near-host-level access. CIS Kubernetes Benchmark 5.2.1.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-privileged
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "Privileged containers are not permitted. [CIS 5.2.1 / NIST AC-6]"
+      pattern:
+        spec:
+          =(securityContext):
+            =(privileged): "false"
+          containers:
+          - =(securityContext):
+              =(privileged): "false"

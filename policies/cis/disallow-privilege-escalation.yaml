@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: cis-5-2-5-disallow-privilege-escalation
+  annotations:
+    policies.kyverno.io/title: Disallow Privilege Escalation
+    policies.kyverno.io/category: CIS Kubernetes Benchmark 5.2
+    policies.kyverno.io/severity: medium
+    compliance.meridian/cis-control: "5.2.5"
+    compliance.meridian/nist-800-53: "AC-6(10)"
+    compliance.meridian/pss-profile: "restricted"
+    policies.kyverno.io/description: >-
+      allowPrivilegeEscalation must be false so a process cannot gain more
+      privileges than its parent. CIS Kubernetes Benchmark 5.2.5.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-allow-privilege-escalation
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "allowPrivilegeEscalation must be set to false. [CIS 5.2.5 / NIST AC-6(10)]"
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              allowPrivilegeEscalation: "false"

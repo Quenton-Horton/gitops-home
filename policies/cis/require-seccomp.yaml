@@ -1,0 +1,36 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: pss-require-seccomp-profile
+  annotations:
+    policies.kyverno.io/title: Require Seccomp Profile
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: medium
+    compliance.meridian/cis-control: "5.7.2"
+    compliance.meridian/nist-800-53: "SI-3, CM-7"
+    compliance.meridian/pss-profile: "restricted"
+    policies.kyverno.io/description: >-
+      A seccomp profile of RuntimeDefault or Localhost must be set to restrict
+      the syscalls available to the container.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-seccomp
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "seccompProfile must be RuntimeDefault or Localhost. [CIS 5.7.2 / NIST SI-3]"
+      anyPattern:
+      - spec:
+          securityContext:
+            seccompProfile:
+              type: "RuntimeDefault | Localhost"
+      - spec:
+          containers:
+          - securityContext:
+              seccompProfile:
+                type: "RuntimeDefault | Localhost"

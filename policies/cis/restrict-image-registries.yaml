@@ -1,0 +1,32 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: supply-chain-restrict-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    compliance.meridian/cis-control: "5.1.4"
+    compliance.meridian/nist-800-53: "CM-11, SA-12, SI-7"
+    compliance.meridian/nist-800-190: "4.1, 4.2"
+    policies.kyverno.io/description: >-
+      Images must come from approved registries. Unapproved sources are an
+      unvetted supply chain. NIST SP 800-190 sections 4.1 and 4.2.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-registry
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - "meridian-*"
+    validate:
+      message: "Images must come from an approved registry. [CIS 5.1.4 / NIST CM-11, SA-12]"
+      pattern:
+        spec:
+          containers:
+          - image: "ghcr.io/* | docker.io/library/* | registry.k8s.io/*"

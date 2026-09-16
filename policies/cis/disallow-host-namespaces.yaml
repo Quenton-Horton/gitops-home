@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: cis-5-2-2-disallow-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow Host Namespaces
+    policies.kyverno.io/category: CIS Kubernetes Benchmark 5.2
+    policies.kyverno.io/severity: high
+    compliance.meridian/cis-control: "5.2.2, 5.2.3, 5.2.4"
+    compliance.meridian/nist-800-53: "SC-7, AC-6"
+    compliance.meridian/pss-profile: "baseline"
+    policies.kyverno.io/description: >-
+      Sharing host PID, IPC, or network namespaces breaks isolation between
+      the container and the node. CIS 5.2.2 through 5.2.4.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-host-namespaces
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "Host namespaces (PID, IPC, network) are not permitted. [CIS 5.2.2-5.2.4 / NIST SC-7]"
+      pattern:
+        spec:
+          =(hostPID): "false"
+          =(hostIPC): "false"
+          =(hostNetwork): "false"

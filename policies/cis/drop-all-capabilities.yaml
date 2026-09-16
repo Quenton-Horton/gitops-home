@@ -1,0 +1,33 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: cis-5-2-9-drop-all-capabilities
+  annotations:
+    policies.kyverno.io/title: Drop All Capabilities
+    policies.kyverno.io/category: CIS Kubernetes Benchmark 5.2
+    policies.kyverno.io/severity: medium
+    compliance.meridian/cis-control: "5.2.8, 5.2.9"
+    compliance.meridian/nist-800-53: "AC-6, CM-7"
+    compliance.meridian/pss-profile: "restricted"
+    policies.kyverno.io/description: >-
+      Containers must drop ALL Linux capabilities and add back only what is
+      required. CIS Kubernetes Benchmark 5.2.8 and 5.2.9.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-drop-all
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "Containers must drop ALL capabilities. [CIS 5.2.8-5.2.9 / NIST CM-7]"
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              capabilities:
+                drop:
+                - ALL
