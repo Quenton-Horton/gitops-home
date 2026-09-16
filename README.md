@@ -1,211 +1,276 @@
 # gitops-home
 
-A local Kubernetes platform managed declaratively with ArgoCD. Everything after the
-cluster itself is installed by committing to this repository — no `helm install`, no
-`kubectl apply` for workloads. Destroy the cluster, point ArgoCD back at this repo, and
-the platform rebuilds.
+A Kubernetes platform managed declaratively with ArgoCD, with compliance implemented
+as code: CIS-mapped admission policies, enforced network segmentation, sealed secrets,
+live control telemetry, and machine-readable NIST 800-53 artifacts generated from the
+cluster's own state.
+
+Everything after the cluster itself is installed by committing to this repository.
+Destroy the cluster, point ArgoCD back here, and the platform rebuilds — which is how
+it was rebuilt mid-build when the CNI had to be replaced.
 
 ```mermaid
 flowchart TB
     Git[("gitops-home<br/>source of truth")]
 
-    subgraph Cluster["k3d — 1 server, 3 agents"]
-        Argo["ArgoCD<br/>continuous reconciliation"]
+    subgraph Cluster["k3d — 1 server, 3 agents, Calico CNI"]
+        Argo["ArgoCD<br/>reconcile · self-heal · prune"]
 
-        subgraph Platform["Platform layers"]
+        subgraph Platform["Platform"]
+            KY["Kyverno<br/>CIS-mapped admission policy"]
             SS["sealed-secrets<br/>asymmetric secret encryption"]
-            KY["Kyverno<br/>admission-time policy"]
-            MON["Prometheus + Grafana<br/>metrics and dashboards"]
+            MON["Prometheus + Grafana<br/>compliance telemetry"]
         end
 
-        APP["podinfo<br/>workload"]
+        subgraph Boundary["Authorization boundary"]
+            DEV["meridian-dev<br/>PSS baseline · audit restricted"]
+            STG["meridian-staging<br/>PSS restricted"]
+            PRD["meridian-prod<br/>PSS restricted · default-deny netpol"]
+        end
     end
 
+    OSCAL[("OSCAL artifacts<br/>800-53 · component def<br/>assessment results")]
+
     Git -->|"poll / webhook"| Argo
-    Argo -->|"sync + self-heal"| SS
-    Argo -->|"sync + self-heal"| KY
-    Argo -->|"sync + self-heal"| MON
-    Argo -->|"sync + self-heal"| APP
-    KY -.->|"blocks non-compliant<br/>at admission"| APP
-    MON -.->|"scrapes"| Cluster
+    Argo --> KY
+    Argo --> SS
+    Argo --> MON
+    Argo --> Boundary
+    KY -.->|"admission gate"| Boundary
+    KY -->|"PolicyReports"| MON
+    KY -->|"PolicyReports"| OSCAL
 ```
 
-## Stack
+## What this demonstrates
 
-| Layer | Component | Purpose |
-|---|---|---|
-| Cluster | k3d / k3s | 4-node local Kubernetes, persistent across restarts |
-| Delivery | ArgoCD | Reconciles cluster state to this repo continuously |
-| Secrets | sealed-secrets | Encrypted credentials committed to a public repo |
-| Policy | Kyverno | Admission-time enforcement of resource standards |
-| Observability | kube-prometheus-stack | Metrics, dashboards, alerting |
-| Workload | podinfo | Test application |
+| Layer | Implementation |
+|---|---|
+| Delivery | ArgoCD — automated sync, self-heal, prune. Git is the only lever. |
+| Boundary | Three environments, Pod Security Standards graded dev → prod at the namespace level |
+| Segmentation | Calico enforcing default-deny NetworkPolicy, verified by connection test |
+| Workload | Three-tier app, `restricted`-compliant by construction, sealed credentials |
+| Policy | Seven CIS-mapped Kyverno policies, enforcing in scope, reporting elsewhere |
+| Governance | Exception register with compensating controls; unassessed controls tracked as POA&M |
+| Scanning | kube-bench (CIS 1–4), Kubescape (NSA-CISA, CIS) |
+| Evidence | Live per-control compliance dashboard; OSCAL assessment results generated from cluster state |
 
 ## Layout
 
 ```
-├── argocd-app.yaml                 # podinfo Application
-├── apps/podinfo/
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   └── sealed-secret.yaml          # ciphertext — safe to commit
-├── infrastructure/
-│   ├── sealed-secrets.yaml
-│   ├── kyverno.yaml
-│   └── monitoring.yaml
-└── policies/
-    └── require-resources.yaml
+├── platform/              # namespaces, RBAC, baseline network policies
+├── meridian/prod/         # three-tier workload + tier-scoped network policies
+├── infrastructure/        # kyverno, sealed-secrets, monitoring (ArgoCD Applications)
+├── policies/
+│   ├── cis/               # CIS-mapped ClusterPolicies with control annotations
+│   └── EXCEPTIONS.md      # exception register, POA&M, remediated findings
+├── monitoring/            # ServiceMonitor + compliance dashboard
+├── apps/podinfo/          # reference workload
+└── oscal/
+    ├── catalogs/          # NIST SP 800-53 Rev 5.2.0 (full catalog, 10MB)
+    ├── profiles/          # Moderate impact baseline
+    ├── component-definitions/   # what this platform implements, per control
+    └── assessment-results/      # generated from live PolicyReports
 ```
 
-## Bootstrap
+---
 
-Create the cluster and install ArgoCD — the only imperative steps:
+## Compliance as code
 
-```bash
-k3d cluster create home --servers 1 --agents 3 -p "8080:80@loadbalancer"
+### Policies carry their control mapping
 
-kubectl create namespace argocd
-kubectl apply -n argocd --server-side \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-kubectl -n argocd rollout status deployment/argocd-server --timeout=300s
+Every ClusterPolicy is annotated with the control it implements. That annotation is
+what separates a rule from evidence:
+
+```yaml
+metadata:
+  name: cis-5-2-5-disallow-privilege-escalation
+  annotations:
+    compliance.meridian/cis-control: "5.2.5"
+    compliance.meridian/nist-800-53: "AC-6(10)"
+    compliance.meridian/pss-profile: "restricted"
 ```
 
-`--server-side` is required — client-side apply fails on the ApplicationSet CRD with
-`metadata.annotations: Too long`.
-
-Then hand the platform to ArgoCD:
-
-```bash
-kubectl apply -f argocd-app.yaml
-kubectl apply -f infrastructure/
-kubectl apply -f policies/
-kubectl get application -n argocd
-```
-
-## What each layer demonstrates
-
-### GitOps — reconciliation, not deployment
-
-`syncPolicy.automated` with `selfHeal: true` means the cluster converges on this repo
-continuously, not on the last command someone ran. Delete a managed deployment by hand
-and ArgoCD restores it. Change `replicas` in a manifest, commit, and the cluster
-follows without anyone running a scale command.
-
-`prune: true` completes the loop — removing a manifest from git removes the resource
-from the cluster. Git is the only lever, which means infrastructure changes carry
-history, review, and `git revert` as a rollback mechanism.
-
-### Sealed secrets — credentials in a public repo
-
-Kubernetes Secrets are base64-encoded, not encrypted; committing one publishes it.
-sealed-secrets solves this with asymmetric crypto: a controller in the cluster holds a
-private key, `kubeseal` encrypts against the public key, and the resulting SealedSecret
-is decryptable **only by that cluster**. The ciphertext is safe in a public repo.
-
-```bash
-kubectl create secret generic podinfo-creds \
-  --from-literal=api-key=<value> --dry-run=client -o yaml > /tmp/raw.yaml
-
-kubeseal --format yaml \
-  --controller-name sealed-secrets --controller-namespace kube-system \
-  < /tmp/raw.yaml > apps/podinfo/sealed-secret.yaml
-
-wc -c apps/podinfo/sealed-secret.yaml   # verify non-zero before committing
-rm /tmp/raw.yaml
-```
-
-The alternative is external-secrets, which leaves values in Vault or AWS Secrets Manager
-and syncs a reference. The choice is whether the secret should exist in git at all.
-
-### Kyverno — governance at the gate
-
-Kubernetes reconciles *runtime state*. It has no opinion about what should be allowed to
-exist. Kyverno is an admission controller: policies are evaluated by the API server
-before a resource is persisted.
-
-`policies/require-resources.yaml` requires every pod in `default` to declare CPU and
-memory limits. A non-compliant pod is rejected outright:
+The rejection message carries it through to the operator:
 
 ```
-$ kubectl run nolimits --image=nginx
 Error from server: admission webhook "validate.kyverno.svc-fail" denied the request:
-resource Pod/default/nolimits was blocked due to the following policies
-require-resource-limits:
-  check-limits: 'validation error: Every container must set CPU and memory limits.'
+
+resource Pod/meridian-dev/enforce-test was blocked due to the following policies
+
+cis-5-2-5-disallow-privilege-escalation:
+  check-allow-privilege-escalation: 'validation error: allowPrivilegeEscalation must
+    be set to false. [CIS 5.2.5 / NIST AC-6(10)]'
 ```
 
-Two distinct control points: ArgoCD reconciles continuously toward a declaration;
-Kyverno decides what is permitted to be declared.
+### Audit before enforce
 
-Policies support `validationFailureAction: Audit`, which reports violations without
-blocking — the path for introducing policy to a cluster that is already running.
+Policies were deployed in `Audit` mode first to establish a baseline against a running
+cluster. That baseline showed the finding that shapes the whole design: **the
+infrastructure components required to run and secure the cluster are the least
+compliant workloads on it.** Calico's node agent needs host networking and NET_ADMIN.
+Node exporter needs host PID and read-only host mounts. The service load balancer binds
+host ports.
 
-### Observability
+`restricted` cannot be enforced cluster-wide without breaking the cluster. The answer is
+scoped enforcement plus documented exceptions — which is what
+[`policies/EXCEPTIONS.md`](policies/EXCEPTIONS.md) is.
 
-kube-prometheus-stack deployed as an ArgoCD Application, so monitoring is declarative
-like everything else. Grafana reads live cluster metrics across every namespace the
-platform runs in.
+Enforcement applies to `meridian-*`. Everything else is evaluated and reported.
+
+### Exceptions, not suppressions
+
+Each exception names the component, the failing controls, the operational justification,
+the compensating controls, and the residual risk. Unassessed controls are tracked
+separately and explicitly **not** claimed as satisfied.
+
+> An exception with no compensating control is a finding, not an exception.
+
+### Findings get remediated through git
+
+| Finding | Control | Fix |
+|---|---|---|
+| Unqualified image reference | CIS 5.1.4 / NIST CM-11 | Fully-qualified registry in the manifest |
+| Plaintext DB password in manifest | Kubescape C-0012 / NIST IA-5 | Sealed secret |
+| `runAsNonRoot` without explicit UID | Kubescape C-0013 / NIST AC-6 | Explicit `runAsUser` at pod and container level |
+| Unused ServiceAccount tokens mounted | Kubescape C-0034 / NIST AC-6 | `automountServiceAccountToken: false` |
+
+Kubescape NSA-CISA score moved 71.86% → 78.97%, zero Critical, zero High. The remaining
+gap is exceptions and unassessed controls, all documented.
+
+The remediation loop: policy detects → finding names the control and the failing path →
+fix is committed → ArgoCD applies → report re-evaluates. No console, no ticket, no
+manual verification.
+
+---
+
+## OSCAL — machine-readable compliance
+
+NIST publishes 800-53 as structured data. There is no reason to transcribe it.
+
+```bash
+trestle import -f NIST_SP-800-53_rev5_catalog.json -o nist-800-53-rev5
+trestle import -f NIST_SP-800-53_rev5_MODERATE-baseline_profile.json -o nist-800-53-moderate
+```
+
+Twenty control families, queryable:
+
+```python
+c = json.load(open('catalogs/nist-800-53-rev5/catalog.json'))['catalog']
+# AC Access Control — 25 controls
+# AU Audit and Accountability — 16 controls
+# CM Configuration Management — 14 controls
+```
+
+### Component definition
+
+[`oscal/component-definitions/meridian-platform/`](oscal/component-definitions/meridian-platform/)
+declares what each platform component implements:
+
+| Component | Controls |
+|---|---|
+| Kyverno Policy Engine | AC-6, AC-6(10), CM-7, CM-11, SA-12, SC-7, SI-3 |
+| Calico Network Policy | AC-4, SC-7 |
+| Sealed Secrets | IA-5, SC-28 |
+| ArgoCD GitOps | CM-2, CM-3, CM-6 |
+| Prometheus / Grafana | AU-6, CA-7, SI-4 |
+
+Each implementation statement names the specific mechanism, not a paraphrase of the
+control. Validated against OSCAL 1.2.1.
+
+### Assessment results generated from the cluster
+
+[`oscal/assessment-results/`](oscal/assessment-results/) is produced by reading live
+`PolicyReport` resources and mapping policy outcomes to controls — **732 observations,
+7 control findings, no manual assessment**. A finding is `satisfied` only when there are
+zero failures *within the authorization boundary*; failures outside it resolve to the
+exception register.
+
+That is the loop closed: NIST defines the control → the component definition claims
+implementation → Kyverno enforces at admission → PolicyReports record every evaluation
+→ assessment results are generated in the format an assessor's tooling consumes.
+
+---
+
+## Verification
+
+Segmentation is claimed and tested. A NetworkPolicy drop is silent — the connection
+hangs rather than refusing — so an immediate `Connection refused` means the policy is
+**not** being enforced.
+
+```bash
+# permitted: web tier → API tier
+kubectl exec -n meridian-prod deploy/meridian-frontend -- wget -qO- http://meridian-api/healthz
+# {"status": "OK"}
+
+# denied: web tier → data tier (hangs until killed)
+kubectl exec -n meridian-prod deploy/meridian-frontend -- timeout 6 nc -zv meridian-db 5432
+# exit 143
+
+# denied: cross-namespace
+kubectl run xns -n meridian-dev --image=busybox:1.28 --rm -it -- \
+  wget -qO- --timeout=6 http://meridian-api.meridian-prod
+# wget: download timed out
+```
+
+This test caught a real finding mid-build: **k3s ships flannel, which does not enforce
+NetworkPolicy.** The policy objects existed and were correctly specified. A document
+review would have passed. The technical test failed. The cluster was rebuilt with
+Calico — and rebuilt entirely from this repository, which is what GitOps is for.
+
+Pod Security Standards enforce independently of Kyverno, at the API server:
+
+```bash
+kubectl run pss-test --image=nginx -n meridian-prod
+# Error from server (Forbidden): violates PodSecurity "restricted:latest":
+#   allowPrivilegeEscalation != false, unrestricted capabilities,
+#   runAsNonRoot != true, seccompProfile
+```
+
+Two control points, deliberately. PSS is built into the API server and cannot be
+bypassed. Kyverno adds control traceability and rules PSS does not cover.
+
+---
+
+## Operating
+
+```bash
+k3d cluster start home     # resume, state intact
+k3d cluster stop home      # park
+
+kubectl get application -n argocd
+kubectl get policyreport -A
+kubescape scan framework nsa --include-namespaces meridian-prod
+```
+
+Grafana → **Meridian — Compliance Posture**:
 
 ```bash
 kubectl -n monitoring port-forward svc/kps-grafana 3000:80
 ```
 
-## Source-type indifference
+Runs locally at no cost.
 
-ArgoCD manages three different source types identically:
-
-- **Helm chart repository** — Kyverno (`kyverno.github.io/kyverno`), monitoring
-  (`prometheus-community.github.io/helm-charts`)
-- **Git path in a third-party repo** — sealed-secrets
-  (`github.com/bitnami-labs/sealed-secrets`, path `helm/sealed-secrets`)
-- **This repository** — podinfo (`apps/podinfo`)
-
-It doesn't care where desired state lives, only that it is declared.
-
-## Debugging ArgoCD
-
-`kubectl get application` reports status but not cause. The explanation is in the
-conditions:
-
-```bash
-kubectl -n argocd get application <name> -o jsonpath='{.status.conditions}' ; echo
-kubectl -n argocd get application <name> -o jsonpath='{.status.operationState.message}' ; echo
-kubectl -n argocd get application <name> -o jsonpath='{.status.sync.revision}' ; echo
-```
-
-Same relationship as `kubectl describe pod` and its Events — status holds the verdict,
-conditions hold the reason.
-
-ArgoCD polls roughly every three minutes. To force a sync:
-
-```bash
-kubectl -n argocd patch application <name> --type merge \
-  -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
-```
-
-Production setups wire a repository webhook so pushes sync immediately; polling is the
-fallback, not the mechanism.
+---
 
 ## Notes from the build
 
-- **Branch mismatch is silent.** An Application targeting `main` against a repo on
-  `master` shows blank sync status and creates nothing.
-- **`targetRevision` is required for Helm sources**, and `destination` is required
-  always. Omitting either produces a spec validation error rather than a sync failure.
-- **Chart repositories disappear.** The sealed-secrets Helm index at
-  `bitnami-labs.github.io` returns 404; the git source works.
-- **kubeseal's default controller name** is `sealed-secrets-controller`; the Helm chart
-  names the service `sealed-secrets`. Pass `--controller-name` explicitly.
-- **Shell redirection creates the file before the command runs.** When `kubeseal`
-  failed, it left a zero-byte `sealed-secret.yaml`. Git committed it, ArgoCD synced it,
-  and every layer reported success on empty input while nothing existed. Check `wc -c`
-  after any redirect that matters — silent success is worse than a loud failure.
-
-## Operating
-
-```bash
-k3d cluster stop home     # park, state preserved
-k3d cluster start home    # resume
-```
-
-Runs locally at no cost.
+- **NetworkPolicy without an enforcing CNI is a document, not a control.** Test the
+  denial path; a hang means enforcement, an immediate refusal means none.
+- **Sealed secrets are bound to the cluster that sealed them.** Rebuilding the cluster
+  generated a new keypair and the existing ciphertext became undecryptable — the
+  security property working as designed, and an operational constraint. Production
+  answers: back up the controller key, share a key across a fleet, or use
+  external-secrets so the value never lives in git.
+- **A ServiceMonitor with a wrong port name produces no target and no error.**
+  Prometheus does not complain about a selector matching nothing; it silently scrapes
+  nothing.
+- **Shell redirection creates the file before the command runs.** A failed `kubeseal`
+  left a zero-byte manifest. Git committed it, ArgoCD synced it, and every layer
+  reported success on empty input. Check `wc -c` after any redirect that matters.
+- **Cumulative counters are not current posture.** `kyverno_policy_results_total` counts
+  every evaluation since controller start; a remediated resource still contributes its
+  historical failures. For point-in-time state, read PolicyReports.
+- **Two tools can disagree about one control.** Kyverno accepted `runAsNonRoot: true`;
+  Kubescape wanted an explicit non-zero `runAsUser`. Both are defensible readings.
+  Frameworks specify outcomes, not Kubernetes implementations — the mapping is
+  interpretive, which is exactly why the reasoning has to be documented.
