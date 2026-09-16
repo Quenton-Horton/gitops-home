@@ -154,10 +154,34 @@ data:
           ]
         },
         {
+          "id": 10,
+          "type": "stat",
+          "title": "Meridian Namespaces — Current Failing Resources",
+          "gridPos": { "h": 5, "w": 12, "x": 0, "y": 24 },
+          "description": "Point-in-time. Cumulative counters above measure enforcement activity over time, not current posture.",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(kube_customresource_policyreport_fail{namespace=~\"meridian-.*\"}) or vector(0)",
+              "legendFormat": "failing"
+            }
+          ]
+        },
+        {
           "id": 9,
           "type": "timeseries",
           "title": "Policy Evaluation Latency (p95)",
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
           "fieldConfig": { "defaults": { "unit": "s" } },
           "targets": [
             {
