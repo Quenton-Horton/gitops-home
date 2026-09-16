@@ -1,0 +1,191 @@
+{
+  "component-definition": {
+    "uuid": "4c05e560-887f-45d4-9d22-6e834377e140",
+    "metadata": {
+      "title": "Meridian Platform \u2014 Kubernetes Compliance Component",
+      "last-modified": "2026-09-16T20:57:33.950047+00:00",
+      "version": "1.0.0",
+      "oscal-version": "1.2.1",
+      "roles": [
+        {
+          "id": "platform-engineer",
+          "title": "Platform Engineer"
+        }
+      ],
+      "parties": [
+        {
+          "uuid": "15b3cef3-f366-4db9-9f9c-7bd87c9ec800",
+          "type": "person",
+          "name": "Quenton Horton"
+        }
+      ]
+    },
+    "components": [
+      {
+        "uuid": "1b658355-b68a-4cab-a53c-24322aa85ddd",
+        "type": "software",
+        "title": "Kyverno Policy Engine",
+        "description": "Admission controller enforcing CIS Kubernetes Benchmark and Pod Security Standards at the API server prior to resource persistence. Policies are version-controlled and reconciled by ArgoCD.",
+        "purpose": "Preventive technical control enforcement for container workloads.",
+        "control-implementations": [
+          {
+            "uuid": "c5ce7978-d8e3-4274-8f4e-c9cf7bd71174",
+            "source": "profiles/nist-800-53-moderate/profile.json",
+            "description": "NIST SP 800-53 Rev 5 Moderate baseline controls implemented by admission policy.",
+            "implemented-requirements": [
+              {
+                "uuid": "a69d1fd5-6b8c-4321-b254-177907e8fbf0",
+                "control-id": "ac-6",
+                "description": "ClusterPolicy cis-5-2-6-require-run-as-nonroot rejects Pods whose containers run as UID 0. ClusterPolicy cis-5-2-1-disallow-privileged rejects privileged containers. ClusterPolicy cis-5-2-9-drop-all-capabilities requires all Linux capabilities be dropped. Enforcement is at admission in meridian-dev, meridian-staging, and meridian-prod; reporting mode elsewhere per the exception register."
+              },
+              {
+                "uuid": "e5c5aaa0-187d-4271-8e66-490d3a478632",
+                "control-id": "ac-6.10",
+                "description": "ClusterPolicy cis-5-2-5-disallow-privilege-escalation requires allowPrivilegeEscalation=false on every container, preventing a process from acquiring privileges beyond its parent."
+              },
+              {
+                "uuid": "0964f1fa-e4e1-494e-9521-643410ae2215",
+                "control-id": "cm-7",
+                "description": "ClusterPolicy cis-5-2-9-drop-all-capabilities enforces least functionality by requiring capabilities.drop=[ALL]. Pod Security Standards restricted profile is enforced at the namespace level as a second, non-bypassable control point."
+              },
+              {
+                "uuid": "9fcc2916-a536-4c89-bb21-4ccb5cc0a353",
+                "control-id": "cm-11",
+                "description": "ClusterPolicy supply-chain-restrict-registries requires fully-qualified image references from approved registries only. Implicit registry resolution is rejected."
+              },
+              {
+                "uuid": "a3a25ada-f87f-4b19-b544-fe6fc038a68b",
+                "control-id": "sc-7",
+                "description": "ClusterPolicy cis-5-2-2-disallow-host-namespaces rejects Pods requesting hostPID, hostIPC, or hostNetwork, preserving the isolation boundary between container and node."
+              },
+              {
+                "uuid": "e51a33e0-20b4-4ce2-a066-9a00764bf8f8",
+                "control-id": "si-3",
+                "description": "ClusterPolicy pss-require-seccomp-profile requires a seccompProfile of RuntimeDefault or Localhost, constraining the syscall surface available to each container."
+              },
+              {
+                "uuid": "6e0d3353-c115-45a3-ab26-79e422190bcb",
+                "control-id": "sa-12",
+                "description": "ClusterPolicy supply-chain-restrict-registries constrains the container supply chain to approved registries, per NIST SP 800-190 sections 4.1 and 4.2."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "396df6e7-e837-45f0-a5fa-461927a1681a",
+        "type": "software",
+        "title": "Calico Network Policy Enforcement",
+        "description": "CNI providing NetworkPolicy enforcement. Default-deny ingress and egress applied to meridian-prod and meridian-staging, with explicit allow rules for required paths only.",
+        "purpose": "Boundary protection and information flow enforcement between workload tiers.",
+        "control-implementations": [
+          {
+            "uuid": "94c14c11-da53-4ca4-9f64-0e6b4091ded7",
+            "source": "profiles/nist-800-53-moderate/profile.json",
+            "description": "Network segmentation controls.",
+            "implemented-requirements": [
+              {
+                "uuid": "24c6187a-0f2d-4649-a0a8-898a9758b3b3",
+                "control-id": "sc-7",
+                "description": "Default-deny NetworkPolicy applied to all Pods in meridian-prod and meridian-staging. Explicit allow rules permit web tier to API tier on 9898/TCP and API tier to data tier on 5432/TCP only. DNS egress to kube-system permitted. Verified by test: web tier to data tier and cross-namespace connections time out without response."
+              },
+              {
+                "uuid": "43bd218b-ec1e-47fd-bb18-f37531a6437a",
+                "control-id": "ac-4",
+                "description": "Information flow between tiers is constrained by label-selector-based NetworkPolicy. Traffic not matching an explicit allow rule is silently dropped at the CNI layer."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "b1627513-66c9-45ed-b75e-3dd9ac821792",
+        "type": "software",
+        "title": "Sealed Secrets",
+        "description": "Asymmetric encryption of Kubernetes Secrets permitting storage of encrypted credentials in a version control system. Decryption is possible only by the controller holding the cluster-specific private key.",
+        "purpose": "Protection of authenticators at rest and in the configuration management system.",
+        "control-implementations": [
+          {
+            "uuid": "38f77b59-7c05-47af-85a1-b40d56db9d43",
+            "source": "profiles/nist-800-53-moderate/profile.json",
+            "description": "Authenticator management.",
+            "implemented-requirements": [
+              {
+                "uuid": "a81e2182-4f1a-4e67-bfaa-a5eae2a800f3",
+                "control-id": "ia-5",
+                "description": "Database credentials are generated with openssl rand, sealed with kubeseal against the cluster's public key, and committed as ciphertext. Plaintext credentials do not exist in the repository or in any manifest. Decryption occurs only in-cluster by the sealed-secrets controller."
+              },
+              {
+                "uuid": "41822028-f520-49fd-a54c-66569fcad66d",
+                "control-id": "sc-28",
+                "description": "Credentials are encrypted at rest in the configuration repository. The sealed ciphertext is not decryptable outside the cluster that generated the keypair."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "c0c6f2ed-78f0-4afd-b59d-e8f8db61dc13",
+        "type": "service",
+        "title": "ArgoCD GitOps Reconciliation",
+        "description": "Continuous reconciliation of cluster state against a version-controlled declaration. Automated sync with self-heal and prune enabled.",
+        "purpose": "Configuration management, baseline enforcement, and unauthorized change remediation.",
+        "control-implementations": [
+          {
+            "uuid": "a94297fd-0f8e-45f1-b4d8-bdea4313d495",
+            "source": "profiles/nist-800-53-moderate/profile.json",
+            "description": "Configuration management controls.",
+            "implemented-requirements": [
+              {
+                "uuid": "cb021020-aeca-4780-ac12-d9b99b0056f1",
+                "control-id": "cm-2",
+                "description": "The authoritative baseline configuration is the git repository. All platform and workload state is declared there and reconciled continuously."
+              },
+              {
+                "uuid": "37a181a6-edd6-44fe-81f7-0c00b30ff222",
+                "control-id": "cm-3",
+                "description": "Configuration changes are made exclusively through version-controlled commits, producing an auditable change record with author, timestamp, and diff. Rollback is performed by git revert."
+              },
+              {
+                "uuid": "5e04fe6a-ca8e-41bc-8ffa-4e8fe2d364c7",
+                "control-id": "cm-6",
+                "description": "selfHeal reverts out-of-band changes to the declared state automatically. prune removes resources deleted from the declaration. Drift between actual and declared state is corrected without operator intervention."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "a0ad3e31-c18b-42ee-875a-8d4cdb3ad166",
+        "type": "service",
+        "title": "Prometheus and Grafana Compliance Telemetry",
+        "description": "Continuous collection of policy evaluation and admission decision metrics, rendered as control-level compliance posture.",
+        "purpose": "Continuous monitoring and audit record generation.",
+        "control-implementations": [
+          {
+            "uuid": "3e22bb82-1875-40ba-8dbf-18cb43ddcd13",
+            "source": "profiles/nist-800-53-moderate/profile.json",
+            "description": "Monitoring and audit controls.",
+            "implemented-requirements": [
+              {
+                "uuid": "79ad7a3b-8f98-40f9-8c3c-d0aadf647bb0",
+                "control-id": "ca-7",
+                "description": "Policy evaluation results and admission decisions are collected continuously as time-series metrics and rendered per-control. Compliance posture is observable in real time rather than assessed at a point in time."
+              },
+              {
+                "uuid": "f59a11c6-dfcf-4a57-b63e-6fbc0c2ab207",
+                "control-id": "au-6",
+                "description": "Admission denials are recorded as metrics labeled with resource kind, namespace, and decision, providing a queryable record of enforcement actions."
+              },
+              {
+                "uuid": "ec973adc-1be3-430e-a41c-5aab3a22346d",
+                "control-id": "si-4",
+                "description": "Kyverno policy results are scraped at 30-second intervals. Deviation from the declared control baseline is visible on the compliance dashboard."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
