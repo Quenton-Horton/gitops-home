@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: meridian-api
+  namespace: meridian-prod
+spec:
+  selector:
+    app: meridian-api
+  ports:
+  - port: 80
+    targetPort: 9898
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meridian-api
+  namespace: meridian-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: meridian-api
+      tier: api
+  template:
+    metadata:
+      labels:
+        app: meridian-api
+        tier: api
+    spec:
+      serviceAccountName: meridian-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: api
+        image: ghcr.io/stefanprodan/podinfo:6.7.0
+        ports:
+        - containerPort: 9898
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9898
+          initialDelaySeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9898
+          initialDelaySeconds: 5

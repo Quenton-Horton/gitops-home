@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: meridian-frontend
+  namespace: meridian-prod
+spec:
+  selector:
+    app: meridian-frontend
+  ports:
+  - port: 80
+    targetPort: 9898
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meridian-frontend
+  namespace: meridian-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: meridian-frontend
+      tier: web
+  template:
+    metadata:
+      labels:
+        app: meridian-frontend
+        tier: web
+    spec:
+      serviceAccountName: meridian-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: frontend
+        image: ghcr.io/stefanprodan/podinfo:6.7.0
+        ports:
+        - containerPort: 9898
+        env:
+        - name: PODINFO_BACKEND_URL
+          value: http://meridian-api/echo
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9898
+          initialDelaySeconds: 5
