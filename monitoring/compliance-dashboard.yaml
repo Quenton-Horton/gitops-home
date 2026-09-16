@@ -1,0 +1,170 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meridian-compliance-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  meridian-compliance.json: |
+    {
+      "title": "Meridian — Compliance Posture",
+      "uid": "meridian-compliance",
+      "tags": ["compliance", "cis", "nist"],
+      "timezone": "browser",
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Overall Compliance Rate",
+          "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 0.8 },
+                  { "color": "green", "value": 0.95 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(kyverno_policy_results_total{rule_result=\"pass\"}) / sum(kyverno_policy_results_total)",
+              "legendFormat": "compliant"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Control Failures",
+          "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(kyverno_policy_results_total{rule_result=\"fail\"})",
+              "legendFormat": "failures"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Admission Denials",
+          "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(kyverno_admission_requests_total{request_allowed=\"false\"})",
+              "legendFormat": "denied"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Active Policies",
+          "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+          "targets": [
+            {
+              "expr": "count(count by (policy_name) (kyverno_policy_results_total))",
+              "legendFormat": "policies"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "bargauge",
+          "title": "Compliance by Control",
+          "gridPos": { "h": 10, "w": 12, "x": 0, "y": 5 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 0.8 },
+                  { "color": "green", "value": 0.99 }
+                ]
+              }
+            }
+          },
+          "options": { "displayMode": "gradient", "orientation": "horizontal" },
+          "targets": [
+            {
+              "expr": "sum(kyverno_policy_results_total{rule_result=\"pass\"}) by (policy_name) / sum(kyverno_policy_results_total) by (policy_name)",
+              "legendFormat": "{{policy_name}}",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "piechart",
+          "title": "Failures by Control",
+          "gridPos": { "h": 10, "w": 12, "x": 12, "y": 5 },
+          "targets": [
+            {
+              "expr": "sum(kyverno_policy_results_total{rule_result=\"fail\"}) by (policy_name)",
+              "legendFormat": "{{policy_name}}",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Admission Decisions Over Time",
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+          "targets": [
+            {
+              "expr": "sum(rate(kyverno_admission_requests_total[5m])) by (request_allowed)",
+              "legendFormat": "allowed={{request_allowed}}"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Policy Evaluation Results Over Time",
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 15 },
+          "targets": [
+            {
+              "expr": "sum(rate(kyverno_policy_results_total[5m])) by (rule_result)",
+              "legendFormat": "{{rule_result}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Policy Evaluation Latency (p95)",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(kyverno_policy_execution_duration_seconds_bucket[5m])) by (le, policy_name))",
+              "legendFormat": "{{policy_name}}"
+            }
+          ]
+        }
+      ]
+    }
