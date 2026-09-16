@@ -13,7 +13,7 @@ metadata:
       allowPrivilegeEscalation must be false so a process cannot gain more
       privileges than its parent. CIS Kubernetes Benchmark 5.2.5.
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
   - name: check-allow-privilege-escalation
@@ -22,6 +22,8 @@ spec:
       - resources:
           kinds:
           - Pod
+          namespaces:
+          - "meridian-*"
     validate:
       message: "allowPrivilegeEscalation must be set to false. [CIS 5.2.5 / NIST AC-6(10)]"
       pattern:

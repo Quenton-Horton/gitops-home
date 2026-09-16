@@ -13,7 +13,7 @@ metadata:
       A seccomp profile of RuntimeDefault or Localhost must be set to restrict
       the syscalls available to the container.
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
   - name: check-seccomp
@@ -22,6 +22,8 @@ spec:
       - resources:
           kinds:
           - Pod
+          namespaces:
+          - "meridian-*"
     validate:
       message: "seccompProfile must be RuntimeDefault or Localhost. [CIS 5.7.2 / NIST SI-3]"
       anyPattern:

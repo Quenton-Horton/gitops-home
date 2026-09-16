@@ -13,7 +13,7 @@ metadata:
       Images must come from approved registries. Unapproved sources are an
       unvetted supply chain. NIST SP 800-190 sections 4.1 and 4.2.
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
   - name: check-registry

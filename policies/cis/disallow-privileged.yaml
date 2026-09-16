@@ -13,7 +13,7 @@ metadata:
       Privileged containers disable most container isolation and grant
       near-host-level access. CIS Kubernetes Benchmark 5.2.1.
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
   - name: check-privileged
@@ -22,6 +22,8 @@ spec:
       - resources:
           kinds:
           - Pod
+          namespaces:
+          - "meridian-*"
     validate:
       message: "Privileged containers are not permitted. [CIS 5.2.1 / NIST AC-6]"
       pattern:

@@ -13,7 +13,7 @@ metadata:
       Sharing host PID, IPC, or network namespaces breaks isolation between
       the container and the node. CIS 5.2.2 through 5.2.4.
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
   - name: check-host-namespaces
@@ -22,6 +22,8 @@ spec:
       - resources:
           kinds:
           - Pod
+          namespaces:
+          - "meridian-*"
     validate:
       message: "Host namespaces (PID, IPC, network) are not permitted. [CIS 5.2.2-5.2.4 / NIST SC-7]"
       pattern:
