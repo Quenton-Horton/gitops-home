@@ -11,7 +11,7 @@ spec:
     - kyverno
   selector:
     matchLabels:
-      app.kubernetes.io/component: metrics
+      app.kubernetes.io/part-of: kyverno
   endpoints:
-  - port: metrics-port
+  - port: metrics
     interval: 30s
