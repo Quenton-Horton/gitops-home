@@ -106,12 +106,76 @@ explicit capability drops; upstream-compatible change.
 
 ---
 
-## Open Findings (not exceptions — to be remediated)
+## EX-006 — Postgres writable root filesystem (`meridian-prod`)
+
+**Failing control:** Kubescape C-0017 (immutable container filesystem)
+
+**Component:** `meridian-db` (StatefulSet)
+
+**Justification:** PostgreSQL writes to its data directory, socket path, and
+temporary files during normal operation. `readOnlyRootFilesystem: true` prevents
+startup.
+
+**Compensating controls:**
+- Data directory is a dedicated mounted volume, not the container root
+- Container runs as UID 70 (postgres), non-root, all capabilities dropped
+- Network access restricted to the API tier by NetworkPolicy (verified by test)
+- Credentials supplied from a sealed secret, not the manifest
+
+**Risk:** Accepted. **POA&M:** evaluate mounting `/tmp` and `/var/run/postgresql`
+as emptyDir volumes to permit a read-only root filesystem.
+
+---
+
+## EX-007 — `system:masters` binding (cluster-scoped)
+
+**Failing controls:** Kubescape C-0002 (command execution), C-0035 (administrative roles)
+
+**Component:** `system:masters` RBAC Group
+
+**Justification:** Built-in Kubernetes superuser group, present in every cluster
+and not removable. Not created by the Meridian system.
+
+**Compensating controls:**
+- No Meridian service account is bound to it
+- Cluster admin credentials are not distributed to application teams
+
+**Risk:** Accepted. Inherent to the platform, outside the authorization boundary.
+
+---
+
+## Unassessed Controls (POA&M — cannot be claimed as satisfied)
+
+| ID | Control | Cause | Remediation |
+|---|---|---|---|
+| U-001 | Kubelet anonymous access (C-0069) | Kubescape CLI cannot read node-local kubelet config | Install Kubescape operator |
+| U-002 | Kubelet client TLS (C-0070) | Same | Install Kubescape operator |
+| U-003 | Secret/etcd encryption | Requires control-plane config access | Verify k3s `--secrets-encryption` flag; document |
+| U-004 | Audit logs enabled | Requires API server config access | Enable k3s audit policy; forward to log store |
+| U-005 | PSP enabled | PodSecurityPolicy removed in Kubernetes 1.25 | Not applicable — superseded by Pod Security Standards (in use) and Kyverno |
+
+An unassessed control is not a passing control.
+
+---
+
+## Remediated Findings
+
+| ID | Component | Control | Fix | Date |
+|---|---|---|---|---|
+| F-001 | `meridian-db` | CIS 5.1.4 / NIST CM-11 | Fully qualified image registry | 2026-09-16 |
+| F-002 | `meridian-db` | Kubescape C-0012 / NIST IA-5 | Credentials moved to sealed secret | 2026-09-16 |
+| F-003 | all meridian workloads | Kubescape C-0013 / NIST AC-6 | Explicit `runAsUser` at pod and container level | 2026-09-16 |
+| F-004 | all meridian workloads | Kubescape C-0034 / NIST AC-6 | `automountServiceAccountToken: false` | 2026-09-16 |
+
+---
+
+## Open Findings (to be remediated)
 
 | ID | Component | Controls | Action |
 |---|---|---|---|
-| F-001 | `podinfo` (default ns) | CIS 5.2.5, 5.2.6, 5.2.9, 5.7.2 | Add restricted securityContext. No operational reason for non-compliance. |
-| F-002 | `local-path-provisioner` | Storage | Replace with CSI driver (see EX-004) |
+| F-005 | `podinfo` (default ns) | CIS 5.2.5, 5.2.6, 5.2.9, 5.7.2 | Add restricted securityContext, or remove — no operational reason for non-compliance. |
+| F-006 | `local-path-provisioner` | Storage | Replace with CSI driver (see EX-004) |
+| F-007 | `meridian-dev`, `meridian-staging` | SC-7 | No NetworkPolicy defined in dev; staging has default-deny only |
 
 ---
 
