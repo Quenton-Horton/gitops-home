@@ -28,9 +28,11 @@ spec:
         tier: api
     spec:
       serviceAccountName: meridian-app
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -39,6 +41,8 @@ spec:
         ports:
         - containerPort: 9898
         securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:

@@ -28,9 +28,11 @@ spec:
         tier: web
     spec:
       serviceAccountName: meridian-app
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -42,6 +44,8 @@ spec:
         - name: PODINFO_BACKEND_URL
           value: http://meridian-api/echo
         securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
